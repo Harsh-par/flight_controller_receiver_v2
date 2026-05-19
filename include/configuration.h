@@ -25,9 +25,9 @@ NOTE : Must enable DEBUG_IMU aswell as specific DEBUG_IMU values you want to see
 #ifndef ENABLE_FC_TRANSMITTER
     #define ENABLE_FC_DEBUG_PID       1
     //#define ENABLE_FC_DEBUG_IMU       1
-    #define ENABLE_FC_DEBUG_IMU_GYRO  1
-    #define ENABLE_FC_DEBUG_IMU_ACCEL 1
-    #define ENABLE_FC_DEBUG_IMU_ANGLE 1
+    //#define ENABLE_FC_DEBUG_IMU_GYRO  1
+    //#define ENABLE_FC_DEBUG_IMU_ACCEL 1
+    //#define ENABLE_FC_DEBUG_IMU_ANGLE 1
 #endif
 
 #endif

@@ -47,11 +47,11 @@ motor_t motor_d;
 
 volatile controller_data_t transmitter;
 
-float ax, ay, az, gx, gy, gz;
-float angle_roll, angle_pitch;
+volatile float ax, ay, az, gx, gy, gz;
+volatile float angle_roll, angle_pitch;
 
-float kalman_roll  = 0, kalman_roll_uncertainty  = 2*2;
-float kalman_pitch = 0, kalman_pitch_uncertainty = 2*2;
+volatile float kalman_roll  = 0, kalman_roll_uncertainty  = 2*2;
+volatile float kalman_pitch = 0, kalman_pitch_uncertainty = 2*2;
 
 bool receiver_connected   = false;
 bool receiver_armed       = false;  
@@ -73,11 +73,13 @@ void app_main(void){
 
     xTaskCreatePinnedToCore(task_core0_sensor,   "core0_sensor",   TASK_STACK_SIZE, NULL, 2, &handle_core0_sensor,    ESP_CORE_0);
     xTaskCreatePinnedToCore(task_core0_receiver, "core0_receiver", TASK_STACK_SIZE, NULL, 2, &handle_core0_receiver,  ESP_CORE_0);
-    xTaskCreatePinnedToCore(task_core1_pid_acro, "core1_pid_acro", TASK_STACK_SIZE, NULL, 2, &handle_core1_pid_acro,  ESP_CORE_1);
-    //xTaskCreatePinnedToCore(task_core1_pid_angle,"core1_pid_angle",TASK_STACK_SIZE, NULL, 2, &handle_core1_pid_angle, ESP_CORE_1);
+    //xTaskCreatePinnedToCore(task_core1_pid_acro, "core1_pid_acro", TASK_STACK_SIZE, NULL, 2, &handle_core1_pid_acro,  ESP_CORE_1);
+    xTaskCreatePinnedToCore(task_core1_pid_angle,"core1_pid_angle",TASK_STACK_SIZE, NULL, 2, &handle_core1_pid_angle, ESP_CORE_1);
 }
 
 void task_core0_sensor(void *pvParameters){
+    esp_task_wdt_delete(NULL);
+
     int64_t time_us_current  = 0;
     int64_t time_us_previous = esp_timer_get_time(); 
     float   time_us_delta    = 0; 
@@ -137,6 +139,7 @@ void task_core0_sensor(void *pvParameters){
 }
 
 void task_core0_receiver(void *pvParameters){
+    esp_task_wdt_delete(NULL);
 
     int64_t time_us_current  = 0;
 
@@ -153,7 +156,7 @@ void task_core0_receiver(void *pvParameters){
         */
         #ifdef ENABLE_FC_BATTERY_MANAGER
             battery_manager_read(&battery_manager);
-            battery_manager_indicate(&battery_manager);
+            battery_manager_indicate(&battery_manager);            
         #endif
 
         /*
@@ -161,13 +164,19 @@ void task_core0_receiver(void *pvParameters){
         */
         receiver_check_connection(&receiver_connected, &receiver_armed, time_us_current);
         receiver_check_arming(&receiver_armed, &transmitter, &motor_a, &motor_b, &motor_c, &motor_d);
-        receiver_check_voltage(&receiver_voltage, &receiver_armed, &battery_manager);
+
+        #ifdef ENABLE_FC_BATTERY_MANAGER
+            receiver_check_voltage(&receiver_voltage, &receiver_armed, &battery_manager);
+        #else
+            receiver_voltage = true;
+        #endif
         
         vTaskDelay(TASK_CORE0_RECEIVER_DELAY_MS / portTICK_PERIOD_MS);
     }
 }
 
 void task_core1_pid_angle(void *pvParameters){
+    esp_task_wdt_delete(NULL);
 
     /*
     Outer and Inner timer variables for the angle and rate pid controllers since they have different frequencies
@@ -222,15 +231,16 @@ void task_core1_pid_angle(void *pvParameters){
                 inner_time_us_delta   = (inner_time_us_current - inner_time_us_previous) * MICROSECOND_TO_SECOND;
 
                 setpoint_rate_roll  = pid_compute(&pid_angle_roll,  setpoint_angle_roll,  kalman_roll,  inner_time_us_delta);
-                setpoint_rate_pitch = pid_compute(&pid_angle_pitch, setpoint_angle_pitch, -kalman_pitch, inner_time_us_delta);
+                setpoint_rate_pitch = pid_compute(&pid_angle_pitch, setpoint_angle_pitch, -kalman_pitch, inner_time_us_delta); //removed - sign from kalmanptic
 
                 inner_loop_counter = 0;
 
                 inner_time_us_previous = inner_time_us_current;
             }
+            //printf("inner_dt %lf\n", inner_time_us_delta);
 
-            float motor_output_roll  = pid_compute_rate(&pid_rate_roll,  setpoint_rate_roll, -gx, outer_time_us_delta);
-            float motor_output_pitch = pid_compute_rate(&pid_rate_pitch, setpoint_rate_pitch, gy, outer_time_us_delta);
+            float motor_output_roll  = pid_compute_rate(&pid_rate_roll,  setpoint_rate_roll,  gx, outer_time_us_delta);
+            float motor_output_pitch = pid_compute_rate(&pid_rate_pitch, setpoint_rate_pitch, -gy, outer_time_us_delta); //try adding neg to this too
 
             /*
             Compute motor output for each motor based on outputs from PID controllers then map each output to pwm duty
@@ -268,13 +278,14 @@ void task_core1_pid_angle(void *pvParameters){
 
             outer_time_us_previous = outer_time_us_current;
         }
-        
+        //printf("outer_dt %lf\n", outer_time_us_delta);
         vTaskDelay(TASK_CORE1_PID_DELAY_MS / portTICK_PERIOD_MS);
     }
 }
 
 
 void task_core1_pid_acro(void *pvParameters){
+    esp_task_wdt_delete(NULL);
 
     int64_t outer_time_us_current  = 0;
     int64_t outer_time_us_previous = esp_timer_get_time(); 
@@ -335,7 +346,7 @@ void task_core1_pid_acro(void *pvParameters){
 
             outer_time_us_previous = outer_time_us_current;
         }
-        
+       
         vTaskDelay(TASK_CORE1_PID_DELAY_MS / portTICK_PERIOD_MS);
     }
 }

@@ -23,9 +23,9 @@
 #define IMU_CALIBRATION_THROTTLE_THRESHOLD 30
 
 //voltage reference for adc reading (changes based on adc attenuation)
-#define VOLTAGE_REFERENCE 3.9f 
+#define VOLTAGE_REFERENCE 3.5f 
 #define VOLTAGE_REFERENCE_DEFAULT_MV 1100
-#define RESISTOR_TOP      100e3f //33e3f
+#define RESISTOR_TOP      33e3f //33e3f
 #define RESISTOR_BOTTOM   10e3f
 #define RESISTOR_RATIO    (RESISTOR_TOP + RESISTOR_BOTTOM) / (RESISTOR_BOTTOM)
 #define ADC_MAXIMUM       4095.f
@@ -35,14 +35,14 @@
 #define VOLTAGE_LEVEL_CRITICAL 3.3f
 
 //ledc pwm frequency
-#define PWM_FREQUENCY 5000 //CHANGE TO 20kHz
+#define PWM_FREQUENCY 5000 
 
 #define MOTOR_PIN_A         1 //D0
 #define MOTOR_PIN_B         2 //D1
 #define MOTOR_PIN_C         3 //D2 
 #define MOTOR_PIN_D         4 //D3
 
-#define PIN_VOLTAGE_DIVIDER 7 //D8
+#define PIN_VOLTAGE_DIVIDER 9 //D8
 #define PIN_INDICATOR_LED   8 //D9
 #define PIN_ONBOARD_LED     21
 
@@ -60,23 +60,23 @@
 #define BUTTON_DEBOUNCE_US (0.3f * SECOND_TO_MICROSECOND)
 
 //pid roll & pid pitch controller values
-#define KP_RATE_ROLL  0.2f
-#define KI_RATE_ROLL  0
-#define KD_RATE_ROLL  0
+#define KP_RATE_ROLL  2.5f
+#define KI_RATE_ROLL  0.02f
+#define KD_RATE_ROLL  0.1f
 
-#define KP_RATE_PITCH 0.2f
-#define KI_RATE_PITCH 0
-#define KD_RATE_PITCH 0
+#define KP_RATE_PITCH 2.5f
+#define KI_RATE_PITCH 0.02f
+#define KD_RATE_PITCH 0.1f
 
-#define KP_ANGLE_ROLL  2.5f
+#define KP_ANGLE_ROLL  1.0f
 #define KI_ANGLE_ROLL  0.0f 
-#define KD_ANGLE_ROLL  2.0f 
+#define KD_ANGLE_ROLL  0.0f 
 
-#define KP_ANGLE_PITCH 2.5f //6.0f
+#define KP_ANGLE_PITCH 1.0f //6.0f
 #define KI_ANGLE_PITCH 0.0f
-#define KD_ANGLE_PITCH 2.0f
+#define KD_ANGLE_PITCH 0.0f
 
-#define INTEGRAL_WINDUP 100.f
+#define INTEGRAL_WINDUP 10.f
 
 #define MINIMUM_ANGLE_RATE -250.f
 #define MAXIMUM_ANGLE_RATE  250.f
@@ -108,8 +108,8 @@
 //freertos task delay microseconds (periodic)
 #define TASK_DELAY_MS 10
 #define TASK_FREQUENCY_DIVIDER       4
-#define TASK_CORE0_SENSOR_DELAY_MS   20
-#define TASK_CORE0_RECEIVER_DELAY_MS 100
-#define TASK_CORE1_PID_DELAY_MS      10
+#define TASK_CORE0_SENSOR_DELAY_MS   1
+#define TASK_CORE0_RECEIVER_DELAY_MS 25
+#define TASK_CORE1_PID_DELAY_MS      1
 
 #endif

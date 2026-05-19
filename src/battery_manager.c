@@ -53,6 +53,8 @@ void battery_manager_read(battery_manager_t* battery_manager){
 
     battery_manager->battery_voltage = ((float)voltage_raw / ADC_MAXIMUM) * VOLTAGE_REFERENCE * RESISTOR_RATIO;
 
+    //printf("%lf V\n", battery_manager->battery_voltage);
+
     if(battery_manager->battery_voltage > VOLTAGE_LEVEL_LOW)
     {      
         battery_manager->battery_status = BATTERY_STATUS_NORMAL; 
