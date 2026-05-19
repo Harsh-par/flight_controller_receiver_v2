@@ -11,29 +11,55 @@
 #define ADDR_REG_OUT_TEMP     0x41
 #define ADDR_REG_OUT_ACCEL    0x3B
 
+#define IMU_CALIBRATION_ITERATIONS 5000
+
 typedef struct{
-    float offset_ax, offset_ay, offset_az;
-    float offset_gx, offset_gy, offset_gz;
-    float offset_angle_pitch, offset_angle_roll;
+    uint32_t i2c_clk;
 
-    void (*init)(const uint8_t pin_sda, const uint8_t pin_scl, const uint32_t clock_speed);
+    float ax; 
+    float ay; 
+    float az; 
+    
+    float gx; 
+    float gy; 
+    float gz;
 
-    void (*calibrate)(float offset_accelerometer[3], float offset_gyroscope[3]);
+    float ax_offset; 
+    float ay_offset; 
+    float az_offset; 
 
-    void (*read)(float* ax, float* ay, float* az, float* gx, float* gy, float* gz);
+    float gx_offset; 
+    float gy_offset; 
+    float gz_offset; 
 
-    void (*compute)(const float ax, const float ay, const float az, float* angle_roll, float* angle_pitch);
+    float angle_roll; 
+    float angle_pitch;
 
-    void (*filter)(float* kalman_state, float* kalman_uncertainty, const float kalman_input, const float kalman_measurement, const float dt);
+    float kalman_roll;
+    float kalman_pitch;
+
+    float kalman_roll_uncertainty;
+    float kalman_pitch_uncertainty;
+
+    gpio_num_t i2c_sda;
+    gpio_num_t i2c_scl;
+
 } mpu6050_t;
 
-extern mpu6050_t mpu6050;
+void mpu6050_init
+(
+    volatile mpu6050_t *mpu6050, 
 
-void mpu6050_init(const uint8_t pin_sda, const uint8_t pin_scl, const uint32_t clock_speed);
-void mpu6050_calibrate(float offset_accelerometer[3], float offset_gyroscope[3]);
-void mpu6050_reorientate(mpu6050_t* mpu6050, uint32_t sample_size);
-void mpu6050_read(float* ax, float* ay, float* az, float* gx, float* gy, float* gz);
-void mpu6050_compute(const float ax, const float ay, const float az, float* angle_roll, float* angle_pitch);
-void mpu6050_filter(float* kalman_state, float* kalman_uncertainty, const float kalman_input, const float kalman_measurement, const float dt);
+    uint32_t i2c_clk,
+
+    gpio_num_t i2c_sda, 
+    gpio_num_t i2c_scl
+);
+
+void mpu6050_read(volatile mpu6050_t *mpu6050);
+void mpu6050_compute(volatile mpu6050_t *mpu6050);
+void mpu6050_calibrate(volatile mpu6050_t *mpu6050);
+void mpu6050_filter_pitch(volatile mpu6050_t *mpu6050, const float dt);
+void mpu6050_filter_roll(volatile mpu6050_t *mpu6050, const float dt);
 
 #endif

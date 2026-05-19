@@ -28,10 +28,6 @@ TaskHandle_t handle_core0_sensor   = NULL;
 TaskHandle_t handle_core0_receiver = NULL;
 TaskHandle_t handle_core1_pid      = NULL;
 
-battery_manager_t battery_manager;
-
-extern mpu6050_t mpu6050;
-
 pid_t pid_rate_roll;
 pid_t pid_rate_pitch;
 pid_t pid_angle_roll;
@@ -42,13 +38,10 @@ motor_t motor_b;
 motor_t motor_c;
 motor_t motor_d;
 
+battery_manager_t battery_manager;
+
+volatile mpu6050_t mpu6050;
 volatile controller_data_t transmitter;
-
-volatile float ax, ay, az, gx, gy, gz;
-volatile float angle_roll, angle_pitch;
-
-volatile float kalman_roll  = 0, kalman_roll_uncertainty  = 2*2;
-volatile float kalman_pitch = 0, kalman_pitch_uncertainty = 2*2;
 
 bool receiver_connected   = false;
 bool receiver_armed       = false;  
@@ -84,13 +77,8 @@ void task_core0_sensor(void *pvParameters)
 
     int64_t time_us_previous_calibration = 0; 
 
-    float offset_accelerometer[3] = {OFFSET_AX, OFFSET_AY, OFFSET_AZ};
-    float offset_gyroscope[3]     = {OFFSET_GX, OFFSET_GY, OFFSET_GZ};
-    //float offset_angle[2]         = {OFFSET_ROLL, OFFSET_PITCH};
-
-    mpu6050_init(I2C_MASTER_SDA, I2C_MASTER_SCL, I2C_MASTER_CLK_HZ);
-    mpu6050_calibrate(offset_accelerometer, offset_gyroscope);
-    mpu6050_reorientate(&mpu6050, IMU_CALIBRATION_SAMPLE_NUM);
+    mpu6050_init(&mpu6050, I2C_MASTER_CLK_HZ, I2C_MASTER_SDA, I2C_MASTER_SCL);
+    mpu6050_calibrate(&mpu6050);
     receiver_calibrated = true;
 
     while(true)
@@ -98,16 +86,15 @@ void task_core0_sensor(void *pvParameters)
         time_us_current = esp_timer_get_time();
         time_us_delta   = (time_us_current - time_us_previous) * MICROSECOND_TO_SECOND;
 
-        mpu6050_read(&ax, &ay, &az, &gx, &gy, &gz);
-        mpu6050_compute(ax, ay, az, &angle_roll, &angle_pitch);
-        mpu6050_filter(&kalman_roll , &kalman_roll_uncertainty , gx, angle_roll , time_us_delta);
-        mpu6050_filter(&kalman_pitch, &kalman_pitch_uncertainty, gy, angle_pitch, time_us_delta); 
+        mpu6050_read(&mpu6050);
+        mpu6050_compute(&mpu6050);
+        mpu6050_filter_pitch(&mpu6050, time_us_delta);
+        mpu6050_filter_roll(&mpu6050, time_us_delta);
 
         if(!receiver_armed && transmitter.joystick_my > IMU_CALIBRATION_THROTTLE_THRESHOLD && time_us_current - time_us_previous_calibration > BUTTON_DEBOUNCE_US)
         {
             receiver_calibrated = false;
-
-            mpu6050_reorientate(&mpu6050, IMU_CALIBRATION_SAMPLE_NUM);
+            mpu6050_calibrate(&mpu6050);
             receiver_calibrated = true;
 
             time_us_previous_calibration = time_us_current;
@@ -230,16 +217,16 @@ void task_core1_pid(void *pvParameters)
                 inner_time_us_current = esp_timer_get_time();
                 inner_time_us_delta   = (inner_time_us_current - inner_time_us_previous) * MICROSECOND_TO_SECOND;
 
-                setpoint_rate_roll  = pid_compute(&pid_angle_roll,  setpoint_angle_roll,  kalman_roll,  inner_time_us_delta);
-                setpoint_rate_pitch = pid_compute(&pid_angle_pitch, setpoint_angle_pitch, -kalman_pitch, inner_time_us_delta);
+                setpoint_rate_roll  = pid_compute(&pid_angle_roll,  setpoint_angle_roll,   mpu6050.kalman_roll,  inner_time_us_delta);
+                setpoint_rate_pitch = pid_compute(&pid_angle_pitch, setpoint_angle_pitch, -mpu6050.kalman_pitch, inner_time_us_delta);
 
                 inner_loop_counter = 0;
 
                 inner_time_us_previous = inner_time_us_current;
             }
 
-            float motor_output_roll  = pid_compute_rate(&pid_rate_roll,  setpoint_rate_roll,  gx, outer_time_us_delta);
-            float motor_output_pitch = pid_compute_rate(&pid_rate_pitch, setpoint_rate_pitch, -gy, outer_time_us_delta); 
+            float motor_output_roll  = pid_compute_rate(&pid_rate_roll,  setpoint_rate_roll,   mpu6050.gx, outer_time_us_delta);
+            float motor_output_pitch = pid_compute_rate(&pid_rate_pitch, setpoint_rate_pitch, -mpu6050.gy, outer_time_us_delta); 
 
             /*
             Compute motor output for each motor based on outputs from PID controllers then map each output to pwm duty

@@ -1,38 +1,25 @@
 #include <math.h>
 
 #include "driver/i2c.h"
-
 #include "mpu6050.h"
 #include "constants.h"
 
-void mpu6050_init(const uint8_t pin_sda, const uint8_t pin_scl, const uint32_t clock_speed);
 
-void mpu6050_calibrate(float offset_accelerometer[3], float offset_gyroscope[3]);
+void mpu6050_init(volatile mpu6050_t *mpu6050, uint32_t i2c_clk, gpio_num_t i2c_sda, gpio_num_t i2c_scl)
+{
+    mpu6050->i2c_sda = i2c_sda;
+    mpu6050->i2c_scl = i2c_scl;
 
-void mpu6050_reorientate(mpu6050_t* mpu6050, uint32_t sample_size);
+    mpu6050->kalman_pitch_uncertainty = 2 * 2;
+    mpu6050->kalman_roll_uncertainty  = 2 * 2;
 
-void mpu6050_read(float* ax, float* ay, float* az, float* gx, float* gy, float* gz);
-
-void mpu6050_compute(const float ax, const float ay, const float az, float* angle_roll, float* angle_pitch);
-
-void mpu6050_filter(float* kalman_state, float* kalman_uncertainty, const float kalman_input, const float kalman_measurement, const float dt);
-
-mpu6050_t mpu6050 = {
-    .init      = mpu6050_init,
-    .calibrate = mpu6050_calibrate,
-    .read      = mpu6050_read,
-    .compute   = mpu6050_compute,
-    .filter    = mpu6050_filter
-};
-
-void mpu6050_init(const uint8_t pin_sda, const uint8_t pin_scl, const uint32_t clock_speed){
-     i2c_config_t i2c_config = {
+    i2c_config_t i2c_config = {
         .mode             = I2C_MODE_MASTER,
-        .sda_io_num       = pin_sda,
-        .scl_io_num       = pin_scl,
+        .sda_io_num       = i2c_sda,
+        .scl_io_num       = i2c_scl,
         .sda_pullup_en    = GPIO_PULLUP_ENABLE,
         .scl_pullup_en    = GPIO_PULLUP_ENABLE,
-        .master.clk_speed = clock_speed,
+        .master.clk_speed = i2c_clk,
     };
 
     i2c_param_config(I2C_MASTER_NUM, &i2c_config);
@@ -53,61 +40,16 @@ void mpu6050_init(const uint8_t pin_sda, const uint8_t pin_scl, const uint32_t c
     i2c_master_write_to_device(I2C_MASTER_NUM, ADDR_I2C_MPU6050, buffer, sizeof(buffer), I2C_TIMEOUT_MS/portTICK_PERIOD_MS);
 
     buffer[0] = ADDR_REG_CONFIG_GYRO; 
-    buffer[1] = 0x08;
+    buffer[1] = 0x00;
     i2c_master_write_to_device(I2C_MASTER_NUM, ADDR_I2C_MPU6050, buffer, sizeof(buffer), I2C_TIMEOUT_MS/portTICK_PERIOD_MS);
 
     buffer[0] = ADDR_REG_CONFIG_ACCEL; 
     buffer[1] = 0x10;
     i2c_master_write_to_device(I2C_MASTER_NUM, ADDR_I2C_MPU6050, buffer, sizeof(buffer), I2C_TIMEOUT_MS/portTICK_PERIOD_MS);
-
-    //init the onboard led (used to show when in calibration mode)
-    gpio_config_t gpio_configuration = {
-        .intr_type    = GPIO_INTR_DISABLE,
-        .mode         = GPIO_MODE_OUTPUT,
-        .pin_bit_mask = (1 << PIN_ONBOARD_LED),
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .pull_up_en   = GPIO_PULLUP_DISABLE
-    };
-
-    gpio_config(&gpio_configuration);
 }
 
-void mpu6050_calibrate(float offset_accelerometer[3], float offset_gyroscope[3]){
-    gpio_set_level(PIN_ONBOARD_LED, false);
-
-    mpu6050.offset_ax = offset_accelerometer[0];
-    mpu6050.offset_ay = offset_accelerometer[1];
-    mpu6050.offset_az = offset_accelerometer[2];
-
-    mpu6050.offset_gx = offset_gyroscope[0];
-    mpu6050.offset_gy = offset_gyroscope[1];
-    mpu6050.offset_gz = offset_gyroscope[2];
-
-    mpu6050.offset_angle_roll  = 0.0f;
-    mpu6050.offset_angle_pitch = 0.0f;
-
-    gpio_set_level(PIN_ONBOARD_LED, true);
-}
-
-void mpu6050_reorientate(mpu6050_t* mpu6050, uint32_t sample_size){
-    float ax, ay, az;
-    float gx, gy, gz;
-    float angle_roll, angle_pitch;
-    float total_angle_roll = 0, total_angle_pitch = 0;
-
-    for(uint32_t samples = 0; samples < sample_size; samples++)
-    {   
-        mpu6050_read(&ax, &ay, &az, &gx, &gy, &gz);
-        mpu6050_compute(ax, ay, az, &angle_roll, &angle_pitch); 
-        total_angle_roll  += angle_roll;
-        total_angle_pitch += angle_pitch;
-    }
-
-    mpu6050->offset_angle_roll  = total_angle_roll / sample_size;
-    mpu6050->offset_angle_pitch = total_angle_pitch / sample_size;
-}
-
-void mpu6050_read(float *ax, float *ay, float *az, float *gx, float *gy, float *gz){
+void mpu6050_read(volatile mpu6050_t *mpu6050)
+{
     uint8_t buffer[14]; 
     uint8_t reg = ADDR_REG_OUT_ACCEL;
 
@@ -121,32 +63,82 @@ void mpu6050_read(float *ax, float *ay, float *az, float *gx, float *gy, float *
     int16_t raw_gy = (buffer[10] << 8) | buffer[11];
     int16_t raw_gz = (buffer[12] << 8) | buffer[13];
 
-    *ax = ((float)raw_ax) / 4096.0f - mpu6050.offset_ax;
-    *ay = ((float)raw_ay) / 4096.0f - mpu6050.offset_ay;
-    *az = ((float)raw_az) / 4096.0f - mpu6050.offset_az;
+    mpu6050->ax = ((float)raw_ax) / 4096.0f - mpu6050->ax_offset;
+    mpu6050->ay = ((float)raw_ay) / 4096.0f - mpu6050->ay_offset;
+    mpu6050->az = ((float)raw_az) / 4096.0f - mpu6050->az_offset;
 
-    *gx = ((float)raw_gx) / 65.5f - mpu6050.offset_gx;
-    *gy = ((float)raw_gy) / 65.5f - mpu6050.offset_gy;
-    *gz = ((float)raw_gz) / 65.5f - mpu6050.offset_gz;
+    mpu6050->gx = ((float)raw_gx) / 131.0f - mpu6050->gx_offset;
+    mpu6050->gy = ((float)raw_gy) / 131.0f - mpu6050->gy_offset;
+    mpu6050->gz = ((float)raw_gz) / 131.0f - mpu6050->gz_offset;
 }
 
-void mpu6050_compute(const float ax, const float ay, const float az, float* angle_roll, float* angle_pitch){
-  *angle_roll  = atanf( ay / sqrtf(ax * ax + az * az)) * (RADIAN_TO_DEGREE) - mpu6050.offset_angle_roll;
-  *angle_pitch = atanf(-ax / sqrtf(ay * ay + az * az)) * (RADIAN_TO_DEGREE) - mpu6050.offset_angle_pitch;
+void mpu6050_compute(volatile mpu6050_t *mpu6050)
+{
+    mpu6050->angle_roll  = atan( mpu6050->ay / sqrt( (mpu6050->ax * mpu6050->ax) + (mpu6050->az * mpu6050->az) )) * (RADIAN_TO_DEGREE);
+    mpu6050->angle_pitch = atan(-mpu6050->ax / sqrt( (mpu6050->ay * mpu6050->ay) + (mpu6050->az * mpu6050->az) )) * (RADIAN_TO_DEGREE);
 }
 
-void mpu6050_filter(float* kalman_state, float* kalman_uncertainty, const float kalman_input, const float kalman_measurement, const float dt){
-    float state       = *kalman_state; 
-    float uncertainty = *kalman_uncertainty;
+void mpu6050_calibrate(volatile mpu6050_t *mpu6050)
+{
+    float accelerometer_values[3] = {0, 0, 0};
+    float gyroscope_values[3] = {0, 0, 0};
 
-    state       = state + kalman_input * dt;
+    for(int i = 0; i < IMU_CALIBRATION_ITERATIONS; i++)
+    {
+        mpu6050_read(mpu6050);
+
+        accelerometer_values[0] = accelerometer_values[0] + mpu6050->ax;
+        accelerometer_values[1] = accelerometer_values[1] + mpu6050->ay;
+        accelerometer_values[2] = accelerometer_values[2] + mpu6050->az;
+
+        gyroscope_values[0] = gyroscope_values[0] + mpu6050->gx;
+        gyroscope_values[1] = gyroscope_values[1] + mpu6050->gy;
+        gyroscope_values[2] = gyroscope_values[2] + mpu6050->gz;
+    }
+
+    mpu6050->ax_offset = (accelerometer_values[0] / IMU_CALIBRATION_ITERATIONS);
+    mpu6050->ay_offset = (accelerometer_values[1] / IMU_CALIBRATION_ITERATIONS);
+    mpu6050->az_offset = (accelerometer_values[2] / IMU_CALIBRATION_ITERATIONS);
+
+    mpu6050->gx_offset = (gyroscope_values[0] / IMU_CALIBRATION_ITERATIONS);
+    mpu6050->gy_offset = (gyroscope_values[1] / IMU_CALIBRATION_ITERATIONS);
+    mpu6050->gz_offset = (gyroscope_values[2] / IMU_CALIBRATION_ITERATIONS);
+}
+
+void mpu6050_filter_pitch(volatile mpu6050_t *mpu6050, const float dt)
+{
+    float state       = mpu6050->kalman_pitch; 
+    float uncertainty = mpu6050->kalman_pitch_uncertainty;
+    float input       = mpu6050->gy;
+    float measurement = mpu6050->angle_pitch;
+
+    state = state + input * dt;
     uncertainty = uncertainty + 4*4 * dt * dt;
 
     float kalman_gain = uncertainty / (uncertainty + 3*3);
 
-    state       = state + kalman_gain * (kalman_measurement - state);
+    state = state + kalman_gain * (measurement - state);
     uncertainty = (1 - kalman_gain) * uncertainty;
 
-    *kalman_state       = state;
-    *kalman_uncertainty = uncertainty;
+    mpu6050->kalman_pitch             = state;
+    mpu6050->kalman_pitch_uncertainty = uncertainty;
+}
+
+void mpu6050_filter_roll(volatile mpu6050_t *mpu6050, const float dt)
+{
+    float state       = mpu6050->kalman_roll; 
+    float uncertainty = mpu6050->kalman_roll_uncertainty;
+    float input       = mpu6050->gx;
+    float measurement = mpu6050->angle_roll;
+
+    state = state + input * dt;
+    uncertainty = uncertainty + 4*4 * dt * dt;
+
+    float kalman_gain = uncertainty / (uncertainty + 3*3);
+
+    state = state + kalman_gain * (measurement - state);
+    uncertainty = (1 - kalman_gain) * uncertainty;
+
+    mpu6050->kalman_roll             = state;
+    mpu6050->kalman_roll_uncertainty = uncertainty;
 }
