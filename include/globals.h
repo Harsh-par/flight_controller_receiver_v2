@@ -18,8 +18,6 @@ typedef int8_t  i8;
 typedef double f64;
 typedef float  f32;
 
-float map(float x, float in_min, float in_max, float out_min, float out_max);
-
 #define MAPF(in, in_min, in_max, out_min, out_max) \
 ((float)(in) - (float)(in_min)) * ((float)(out_max) - (float)(out_min)) / ((float)(in_max) - (float)(in_min)) + (float)(out_min)
 

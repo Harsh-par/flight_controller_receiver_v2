@@ -10,9 +10,9 @@
 #include "esp_log.h"
 
 #include "configuration.h"
-
 #include "constants.h"
 #include "globals.h"
+
 #include "adc.h"
 #include "battery_manager.h"
 #include "mpu6050.h"
@@ -20,10 +20,10 @@
 #include "motor.h"
 #include "receiver.h"
 
-void task_core0_sensor(void *pvParameters);
-void task_core0_receiver(void *pvParameters);
-void task_core1_pid_angle(void *pvParameters);
-void task_core1_pid_acro(void *pvParameters);
+void task_core0_sensor    (void *pvParameters);
+void task_core0_receiver  (void *pvParameters);
+void task_core1_pid_angle (void *pvParameters);
+void task_core1_pid_acro  (void *pvParameters);
 
 TaskHandle_t handle_core0_sensor    = NULL;
 TaskHandle_t handle_core0_receiver  = NULL;
