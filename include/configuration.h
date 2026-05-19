@@ -12,11 +12,6 @@ When disabled debugging logs will print to serial monitor
 */
 #define ENABLE_FC_TRANSMITTER 1
 
-typedef enum{
-    FC_ACRO_MODE,
-    FC_ANGLE_MODE
-} flight_mode_t;
-
 /*
 When enabled can be used to debug on serial monitor
 NOTE : ENABLE_FC_TRANSMITTER must not be defined

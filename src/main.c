@@ -20,18 +20,15 @@
 #include "motor.h"
 #include "receiver.h"
 
-void task_core0_sensor    (void *pvParameters);
-void task_core0_receiver  (void *pvParameters);
-void task_core1_pid_angle (void *pvParameters);
-void task_core1_pid_acro  (void *pvParameters);
+void task_core0_sensor   (void *pvParameters);
+void task_core0_receiver (void *pvParameters);
+void task_core1_pid      (void *pvParameters);
 
-TaskHandle_t handle_core0_sensor    = NULL;
-TaskHandle_t handle_core0_receiver  = NULL;
-TaskHandle_t handle_core1_pid_angle = NULL;
-TaskHandle_t handle_core1_pid_acro  = NULL;
+TaskHandle_t handle_core0_sensor   = NULL;
+TaskHandle_t handle_core0_receiver = NULL;
+TaskHandle_t handle_core1_pid      = NULL;
 
 battery_manager_t battery_manager;
-flight_mode_t flight_mode = FC_ACRO_MODE;
 
 extern mpu6050_t mpu6050;
 
@@ -60,7 +57,8 @@ bool receiver_calibrated  = false;
 
 int64_t time_us_last_packet;
 
-void app_main(void){
+void app_main(void)
+{
     adc_handle_init();
     receiver_init();
 
@@ -71,13 +69,13 @@ void app_main(void){
     motor_init(&motor_c, MOTOR_PIN_C, LEDC_CHANNEL_2, LEDC_TIMER_0);
     motor_init(&motor_d, MOTOR_PIN_D, LEDC_CHANNEL_3, LEDC_TIMER_0);
 
-    xTaskCreatePinnedToCore(task_core0_sensor,   "core0_sensor",   TASK_STACK_SIZE, NULL, 2, &handle_core0_sensor,    ESP_CORE_0);
-    xTaskCreatePinnedToCore(task_core0_receiver, "core0_receiver", TASK_STACK_SIZE, NULL, 2, &handle_core0_receiver,  ESP_CORE_0);
-    //xTaskCreatePinnedToCore(task_core1_pid_acro, "core1_pid_acro", TASK_STACK_SIZE, NULL, 2, &handle_core1_pid_acro,  ESP_CORE_1);
-    xTaskCreatePinnedToCore(task_core1_pid_angle,"core1_pid_angle",TASK_STACK_SIZE, NULL, 2, &handle_core1_pid_angle, ESP_CORE_1);
+    xTaskCreatePinnedToCore(task_core0_sensor,    "core0_sensor",   TASK_STACK_SIZE, NULL, 2, &handle_core0_sensor,    ESP_CORE_0);
+    xTaskCreatePinnedToCore(task_core0_receiver,  "core0_receiver", TASK_STACK_SIZE, NULL, 2, &handle_core0_receiver,  ESP_CORE_0);
+    xTaskCreatePinnedToCore(task_core1_pid,       "core1_pid",      TASK_STACK_SIZE, NULL, 2, &handle_core1_pid,       ESP_CORE_1);
 }
 
-void task_core0_sensor(void *pvParameters){
+void task_core0_sensor(void *pvParameters)
+{
     esp_task_wdt_delete(NULL);
 
     int64_t time_us_current  = 0;
@@ -138,7 +136,8 @@ void task_core0_sensor(void *pvParameters){
     }
 }
 
-void task_core0_receiver(void *pvParameters){
+void task_core0_receiver(void *pvParameters)
+{
     esp_task_wdt_delete(NULL);
 
     int64_t time_us_current  = 0;
@@ -175,7 +174,8 @@ void task_core0_receiver(void *pvParameters){
     }
 }
 
-void task_core1_pid_angle(void *pvParameters){
+void task_core1_pid(void *pvParameters)
+{
     esp_task_wdt_delete(NULL);
 
     /*
@@ -212,9 +212,9 @@ void task_core1_pid_angle(void *pvParameters){
             /*
             Map transmitter joystick values to setpoints for PID controllers and base throttle
             */
-            float motor_output_base    = map(transmitter.joystick_ly, -MAX_JOYSTICK, MAX_JOYSTICK, -BASE_THROTTLE, BASE_THROTTLE*0.70);
-            float setpoint_angle_roll  = map(transmitter.joystick_rx, MIN_JOYSTICK, MAX_JOYSTICK, -BASE_ANGLE, BASE_ANGLE);
-            float setpoint_angle_pitch = map(transmitter.joystick_ry, MIN_JOYSTICK, MAX_JOYSTICK, -BASE_ANGLE, BASE_ANGLE);
+            float motor_output_base    = MAPF(transmitter.joystick_ly, -MAX_JOYSTICK, MAX_JOYSTICK, -BASE_THROTTLE, BASE_THROTTLE*0.70);
+            float setpoint_angle_roll  = MAPF(transmitter.joystick_rx, MIN_JOYSTICK, MAX_JOYSTICK, -BASE_ANGLE, BASE_ANGLE);
+            float setpoint_angle_pitch = MAPF(transmitter.joystick_ry, MIN_JOYSTICK, MAX_JOYSTICK, -BASE_ANGLE, BASE_ANGLE);
 
             /*
             Using cascaded PID controllers to calculate the motor output 
@@ -231,16 +231,15 @@ void task_core1_pid_angle(void *pvParameters){
                 inner_time_us_delta   = (inner_time_us_current - inner_time_us_previous) * MICROSECOND_TO_SECOND;
 
                 setpoint_rate_roll  = pid_compute(&pid_angle_roll,  setpoint_angle_roll,  kalman_roll,  inner_time_us_delta);
-                setpoint_rate_pitch = pid_compute(&pid_angle_pitch, setpoint_angle_pitch, -kalman_pitch, inner_time_us_delta); //removed - sign from kalmanptic
+                setpoint_rate_pitch = pid_compute(&pid_angle_pitch, setpoint_angle_pitch, -kalman_pitch, inner_time_us_delta);
 
                 inner_loop_counter = 0;
 
                 inner_time_us_previous = inner_time_us_current;
             }
-            //printf("inner_dt %lf\n", inner_time_us_delta);
 
             float motor_output_roll  = pid_compute_rate(&pid_rate_roll,  setpoint_rate_roll,  gx, outer_time_us_delta);
-            float motor_output_pitch = pid_compute_rate(&pid_rate_pitch, setpoint_rate_pitch, -gy, outer_time_us_delta); //try adding neg to this too
+            float motor_output_pitch = pid_compute_rate(&pid_rate_pitch, setpoint_rate_pitch, -gy, outer_time_us_delta); 
 
             /*
             Compute motor output for each motor based on outputs from PID controllers then map each output to pwm duty
@@ -278,75 +277,7 @@ void task_core1_pid_angle(void *pvParameters){
 
             outer_time_us_previous = outer_time_us_current;
         }
-        //printf("outer_dt %lf\n", outer_time_us_delta);
-        vTaskDelay(TASK_CORE1_PID_DELAY_MS / portTICK_PERIOD_MS);
-    }
-}
-
-
-void task_core1_pid_acro(void *pvParameters){
-    esp_task_wdt_delete(NULL);
-
-    int64_t outer_time_us_current  = 0;
-    int64_t outer_time_us_previous = esp_timer_get_time(); 
-    float   outer_time_us_delta    = 0; 
-    
-    pid_init(&pid_rate_roll,  KP_RATE_ROLL,  KI_RATE_ROLL,  KD_RATE_ROLL,  INTEGRAL_WINDUP, MINIMUM_OUTPUT, MAXIMUM_OUTPUT);
-    pid_init(&pid_rate_pitch, KP_RATE_PITCH, KI_RATE_PITCH, KD_RATE_PITCH, INTEGRAL_WINDUP, MINIMUM_OUTPUT, MAXIMUM_OUTPUT);
-
-    while(true)
-    {
-        #ifdef ENABLE_FC_TRANSMITTER
-        if(receiver_armed && receiver_connected && receiver_voltage && receiver_calibrated)
-        #endif
-        {
-            outer_time_us_current = esp_timer_get_time();
-            outer_time_us_delta   = (outer_time_us_current - outer_time_us_previous) * MICROSECOND_TO_SECOND; 
-            /*
-            Map transmitter joystick values to setpoints for PID controllers and base throttle
-            */
-            float motor_output_base   = map(transmitter.joystick_ly, -MAX_JOYSTICK, MAX_JOYSTICK, -BASE_THROTTLE, BASE_THROTTLE*0.70);
-            float setpoint_rate_roll  = map(transmitter.joystick_rx, MIN_JOYSTICK, MAX_JOYSTICK, -BASE_ANGLE*8, BASE_ANGLE*8);
-            float setpoint_rate_pitch = map(transmitter.joystick_ry, MIN_JOYSTICK, MAX_JOYSTICK, -BASE_ANGLE*8, BASE_ANGLE*8);
-
-            float motor_output_roll  = pid_compute_rate(&pid_rate_roll,  setpoint_rate_roll, -gx, outer_time_us_delta);
-            float motor_output_pitch = pid_compute_rate(&pid_rate_pitch, setpoint_rate_pitch, gy, outer_time_us_delta);
-
-            /*
-            Compute motor output for each motor based on outputs from PID controllers then map each output to pwm duty
-            */
-            float motor_output_a = motor_output_base + motor_output_pitch + motor_output_roll; 
-            float motor_output_b = motor_output_base + motor_output_pitch - motor_output_roll; 
-            float motor_output_c = motor_output_base - motor_output_pitch - motor_output_roll; 
-            float motor_output_d = motor_output_base - motor_output_pitch + motor_output_roll;
-
-            motor_output_a = MAPF(motor_output_a, MINIMUM_THROTTLE, MAXIMUM_THROTTLE, MINIMUM_PWM_DUTY, MAXIMUM_PWM_DUTY);
-            motor_output_b = MAPF(motor_output_b, MINIMUM_THROTTLE, MAXIMUM_THROTTLE, MINIMUM_PWM_DUTY, MAXIMUM_PWM_DUTY);
-            motor_output_c = MAPF(motor_output_c, MINIMUM_THROTTLE, MAXIMUM_THROTTLE, MINIMUM_PWM_DUTY, MAXIMUM_PWM_DUTY);
-            motor_output_d = MAPF(motor_output_d, MINIMUM_THROTTLE, MAXIMUM_THROTTLE, MINIMUM_PWM_DUTY, MAXIMUM_PWM_DUTY);
-
-            motor_output_a = CONSTRAIN(motor_output_a, MINIMUM_PWM_DUTY, MAXIMUM_PWM_DUTY);
-            motor_output_b = CONSTRAIN(motor_output_b, MINIMUM_PWM_DUTY, MAXIMUM_PWM_DUTY);
-            motor_output_c = CONSTRAIN(motor_output_c, MINIMUM_PWM_DUTY, MAXIMUM_PWM_DUTY);
-            motor_output_d = CONSTRAIN(motor_output_d, MINIMUM_PWM_DUTY, MAXIMUM_PWM_DUTY);
-
-            #ifdef ENABLE_FC_DEBUG_PID
-                static uint32_t counter = 0;
-                counter = (counter + 1) % 15;
-                if(counter == 0) 
-                    ESP_LOGI("MOTOR", "A : %.2f B : %.2f C : %.2f D : %.2f\n", motor_output_a, motor_output_b, motor_output_c, motor_output_d);
-            #endif
-
-            #ifdef ENABLE_FC_TRANSMITTER
-                motor_set(&motor_a, motor_output_a);
-                motor_set(&motor_b, motor_output_b);
-                motor_set(&motor_c, motor_output_c);
-                motor_set(&motor_d, motor_output_d);
-            #endif
-
-            outer_time_us_previous = outer_time_us_current;
-        }
-       
+        
         vTaskDelay(TASK_CORE1_PID_DELAY_MS / portTICK_PERIOD_MS);
     }
 }
